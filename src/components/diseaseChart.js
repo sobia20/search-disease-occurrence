@@ -143,7 +143,7 @@ class DiseaseChart extends Component {
 
 
       })
-      .catch(res=> {
+      .catch(res=> { if(res.response){
         if (sleepingCodes.includes(res.response.status)){
           console.log("Sleeping for 30 seconds... already 10 connections")
           setTimeout(() => {
@@ -168,9 +168,10 @@ class DiseaseChart extends Component {
               retstart
             ); /* 3 */
           }, backoff);
-        } else {
+        }}
+         else {
           console.log("Status Code is Unknown")
-          console.log(res.response)
+          console.log(res)
         }
     
       });
