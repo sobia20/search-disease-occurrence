@@ -21,7 +21,8 @@ class DiseaseChart extends Component {
     toYear: 0,
     disease: "",
     yearList: [],
-    mockData: [{ x: 2019, y: 33 }, { x: 2020, y: 22 }]
+    mockData: [{ x: 2019, y: 33 }, { x: 2020, y: 22 }],
+    concurrent: 0
   };
   componentDidMount() {}
   sendDisease = () => {
@@ -48,7 +49,7 @@ class DiseaseChart extends Component {
               `Fetching ${retstart + 1}/${parseInt(loops_required, 10) + 1}...`
             );
             // axios.post(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&WebEnv=${webenv}&api_key=dbb9d1e2b75b1fc75acb3ec0fefc3745bd09&query_key=${querykey}&retstart=${retstart}&retmax=10000`).then(res=>{
-            this.fetchRetry(3, 300, webenv, querykey, retstart);
+            this.fetchRetry(3, 900, webenv, querykey, retstart);
             // let match = ''
             // let intyear = 0
             // let matchyear = 0
@@ -130,31 +131,49 @@ class DiseaseChart extends Component {
   };
 
   fetchRetry = (retries = 3, backoff = 300, webenv, querykey, retstart) => {
-    const retryCodes = [408, 500, 502, 503, 504, 522, 524];
+    const retryCodes = [408, 500, 502, 503, 504, 522, 524, 400];
+    const sleepingCodes = [429]
     return axios
       .post(
         `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&WebEnv=${webenv}&api_key=dbb9d1e2b75b1fc75acb3ec0fefc3745bd09&query_key=${querykey}&retstart=${retstart}&retmax=10000`
       )
       .then(res => {
-        console.log(res)
-        if (res.status === 200) return this.findYearInData(res.data);
+        console.log(`Fetched successfully (${retstart+1})`)
+        return this.findYearInData(res.data);
 
-        if (retries > 0 && retryCodes.includes(res.status)) {
+
+      })
+      .catch(res=> {
+        if (sleepingCodes.includes(res.response.status)){
+          console.log("Sleeping for 30 seconds... already 10 connections")
+          setTimeout(() => {
+            return this.fetchRetry(
+              retries,
+              backoff,
+              webenv,
+              querykey,
+              retstart
+            ); /* 3 */
+          }, 1000*30);
+        }
+
+        if (retries > 0 && retryCodes.includes(res.response.status)) {
+          console.log(`Backing off for ${backoff}`)
           setTimeout(() => {
             return this.fetchRetry(
               retries - 1,
-              backoff * 2,
+              backoff * 3,
               webenv,
               querykey,
               retstart
             ); /* 3 */
           }, backoff);
         } else {
-          console.log(res)
-          throw new Error(res);
+          console.log("Status Code is Unknown")
+          console.log(res.response)
         }
-      })
-      .catch(console.error);
+    
+      });
   };
 
   render() {
