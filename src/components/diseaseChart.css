@@ -1,0 +1,13 @@
+.date-grid{
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: auto auto;
+    grid-column-gap: 10px;
+}
+.container-margin{
+    margin-top: 50px
+}
+.submit-button{
+    float: right;
+    margin-top: 20px !important;
+}
