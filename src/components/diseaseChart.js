@@ -22,11 +22,12 @@ class DiseaseChart extends Component {
     disease: "",
     yearList: [],
     mockData: [{ x: 2019, y: 33 }, { x: 2020, y: 22 }],
-    concurrent: 0
+    urls: [],
+    ten_promises:[]
   };
-  componentDidMount() {}
-  sendDisease = () => {
-    let { fromYear, toYear, disease, yearList } = this.state;
+
+   sendDisease = () => {
+    let { fromYear, toYear, disease} = this.state;
     this.initializeChartData();
     axios
       .post(
@@ -39,51 +40,112 @@ class DiseaseChart extends Component {
           let count = res.data.esearchresult.count;
           let retstart = 0;
           const max_ret = 10000;
-          // const regex = /em std {\n\s*year (\d{4})/gm
           let loops_required = count / max_ret;
-          let resData = "";
+          console.log("Total Records to fetch: ", count)
+          
+          this.constructURLS(loops_required,webenv, querykey, retstart)
 
-          console.log("Total Records to fetch: ", count);
-          while (retstart <= loops_required) {
-            console.log(
-              `Fetching ${retstart + 1}/${parseInt(loops_required, 10) + 1}...`
-            );
-            // axios.post(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&WebEnv=${webenv}&api_key=dbb9d1e2b75b1fc75acb3ec0fefc3745bd09&query_key=${querykey}&retstart=${retstart}&retmax=10000`).then(res=>{
-            this.fetchRetry(3, 900, webenv, querykey, retstart);
-            // let match = ''
-            // let intyear = 0
-            // let matchyear = 0
-            // while(match!==null){
-            //   match = regex.exec(resData)
-            //   if(match!==null){
-            //     matchyear = parseInt(match[1],10)
-            //     intyear = matchyear-fromYear
-            //     try{
-            //       yearList[intyear]['y']++
-            //     }
-            //     catch(err){
-            //       console.log("Error saving for year: ",matchyear)
-            //       continue
-            //     }
-
-            //   }
-            // }
-            // this.setState({yearList: yearList})
-            // console.log('yearList ', this.state.yearList)
-            // })
-            retstart++;
-          }
+          this.make_ten_promises()
+          
         },
         error => {
           console.log(error);
         }
       );
   };
+
+  make_ten_promises = () => {
+    let {urls, ten_promises} = this.state
+    let counter = 0;
+    let url;
+    let single_request;
+    
+    while(counter<10){
+      if(urls){
+        url = urls.pop()
+        this.setState({urls: urls})
+      }
+      else{
+        break
+      }
+      single_request = this.makePromise(url, 3, 300)
+      ten_promises.push(single_request)
+      this.setState({ten_promises:ten_promises})
+      counter++
+    }
+    console.log('Ten promises made')
+  }
+
+  makePromise = (url, retries = 3, backoff = 300) => {
+    
+    const retryCodes = [408, 500, 502, 503, 504, 522, 524, 400];
+    const sleepingCodes = [429]
+    return axios.post(url).then(res=>{
+      this.findYearInData(res.data);
+      this.addAnotherPromise()
+    }).catch(res=> { if(res.response){
+      if (sleepingCodes.includes(res.response.status)){
+        console.log("Sleeping for 30 seconds... already 10 connections")
+        setTimeout(() => {
+          return this.makePromise( 
+            url,
+            retries,
+            backoff
+          ); 
+        }, 1000*30);
+      }
+
+      if (retries > 0 && retryCodes.includes(res.response.status)) {
+        console.log(`Backing off for ${backoff}`)
+        setTimeout(() => {
+          return this.makePromise(
+            url,
+            retries - 1,
+            backoff * 3
+          ); 
+        }, backoff);
+      }}
+       else {
+        console.log("Status Code is Unknown")
+        console.log(res)
+      }
+  
+    })
+   
+  }
+
+  addAnotherPromise = () => {
+    let {urls, ten_promises} = this.state
+    let url;
+    if(urls){
+      url = urls.pop()
+      this.setState({urls:urls})
+    }
+    else{
+      return
+    }
+    ten_promises.push(axios.post(url).then(res=>{
+      this.findYearInData(res.data);
+      this.addAnotherPromise()
+    }))
+    this.setState({ten_promises: ten_promises})
+  }
+
+  constructURLS = (loops_required, webenv, querykey, retstart) =>{
+    let {urls} = this.state;
+    while(retstart<=loops_required){
+      urls.push(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&WebEnv=${webenv}&api_key=dbb9d1e2b75b1fc75acb3ec0fefc3745bd09&query_key=${querykey}&retstart=${retstart}&retmax=10000`)
+      retstart++
+    }
+    this.setState({urls: urls})
+    console.log(`Total request needed are ${retstart}`)
+  }
+ 
   initializeChartData = () => {
     let { fromYear, toYear, yearList } = this.state;
     this.setState({ yearList: [] });
     while (fromYear <= toYear) {
-      yearList.push({ x: fromYear, y: 0 });
+      yearList.push({ x: ''+fromYear, y: 0 });
       fromYear++;
     }
     this.setState({ yearList: yearList });
@@ -121,60 +183,13 @@ class DiseaseChart extends Component {
         try {
           yearList[intyear]["y"]++;
         } catch (err) {
-          console.log("Error saving for year: ", matchyear);
+          console.log("Got a year out of range: ", matchyear);
           continue;
         }
       }
     }
     this.setState({ yearList: yearList });
     console.log("yearList ", this.state.yearList);
-  };
-
-  fetchRetry = (retries = 3, backoff = 300, webenv, querykey, retstart) => {
-    const retryCodes = [408, 500, 502, 503, 504, 522, 524, 400];
-    const sleepingCodes = [429]
-    return axios
-      .post(
-        `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&WebEnv=${webenv}&api_key=dbb9d1e2b75b1fc75acb3ec0fefc3745bd09&query_key=${querykey}&retstart=${retstart}&retmax=10000`
-      )
-      .then(res => {
-        console.log(`Fetched successfully (${retstart+1})`)
-        return this.findYearInData(res.data);
-
-
-      })
-      .catch(res=> { if(res.response){
-        if (sleepingCodes.includes(res.response.status)){
-          console.log("Sleeping for 30 seconds... already 10 connections")
-          setTimeout(() => {
-            return this.fetchRetry(
-              retries,
-              backoff,
-              webenv,
-              querykey,
-              retstart
-            ); /* 3 */
-          }, 1000*30);
-        }
-
-        if (retries > 0 && retryCodes.includes(res.response.status)) {
-          console.log(`Backing off for ${backoff}`)
-          setTimeout(() => {
-            return this.fetchRetry(
-              retries - 1,
-              backoff * 3,
-              webenv,
-              querykey,
-              retstart
-            ); /* 3 */
-          }, backoff);
-        }}
-         else {
-          console.log("Status Code is Unknown")
-          console.log(res)
-        }
-    
-      });
   };
 
   render() {
